@@ -75,9 +75,11 @@ def generate_report(
     differences_pivot = _calculate_differences(
         source, target, join_on_fields, run_metadata.validations, is_value_comparison
     )
+
     source_pivot = _pivot_result(
         source, join_on_fields, run_metadata.validations, consts.RESULT_TYPE_SOURCE
     )
+
     target_pivot = _pivot_result(
         target, join_on_fields, run_metadata.validations, consts.RESULT_TYPE_TARGET
     )
@@ -112,7 +114,23 @@ def _calculate_difference(field_differences, datatype, validation, is_value_comp
         difference = pct_difference = ibis.null()
         validation_status = (
             ibis.case()
+            .when(
+                target_value.isnull() & source_value.isnull(),
+                consts.VALIDATION_STATUS_SUCCESS,
+            )
             .when(target_value == source_value, consts.VALIDATION_STATUS_SUCCESS)
+            .else_(consts.VALIDATION_STATUS_FAIL)
+            .end()
+        )
+    # String data types i.e "None" can be returned for NULL timestamp/datetime aggs
+    elif isinstance(datatype, ibis.expr.datatypes.String):
+        difference = pct_difference = ibis.null().cast("float64")
+        validation_status = (
+            ibis.case()
+            .when(
+                target_value.isnull() & source_value.isnull(),
+                consts.VALIDATION_STATUS_SUCCESS,
+            )
             .else_(consts.VALIDATION_STATUS_FAIL)
             .end()
         )
@@ -149,7 +167,6 @@ def _calculate_difference(field_differences, datatype, validation, is_value_comp
             .else_(consts.VALIDATION_STATUS_SUCCESS)
             .end()
         )
-
     return (
         difference.name("difference"),
         pct_difference.name("pct_difference"),
@@ -178,7 +195,6 @@ def _calculate_differences(
         # When no join_on_fields are present, we expect only one row per table.
         # This is validated in generate_report before this function is called.
         differences_joined = source.cross_join(target)
-
     differences_pivots = []
     for field, field_type in schema.items():
         if field not in validations:
@@ -201,7 +217,6 @@ def _calculate_differences(
                     )
                 ]
             )
-
     differences_pivot = functools.reduce(
         lambda pivot1, pivot2: pivot1.union(pivot2), differences_pivots
     )
@@ -210,7 +225,11 @@ def _calculate_differences(
 
 def _pivot_result(result, join_on_fields, validations, result_type):
     all_fields = frozenset(result.schema().names)
-    validation_fields = all_fields - frozenset(join_on_fields)
+    validation_fields = (
+        all_fields - frozenset(join_on_fields)
+        if "hash__all" not in join_on_fields
+        else all_fields
+    )
     pivots = []
 
     for field in validation_fields:

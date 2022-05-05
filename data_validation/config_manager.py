@@ -151,6 +151,17 @@ class ConfigManager(object):
         )
 
     @property
+    def custom_query_type(self):
+        """Return custom query type from config"""
+        return self._config.get(consts.CONFIG_CUSTOM_QUERY_TYPE, "")
+
+    def append_custom_query_type(self, custom_query_type):
+        """Append custom query type config to existing config."""
+        self._config[consts.CONFIG_CUSTOM_QUERY_TYPE] = (
+            self.custom_query_type + custom_query_type
+        )
+
+    @property
     def source_query_file(self):
         """Return SQL Query File from Config"""
         return self._config.get(consts.CONFIG_SOURCE_QUERY_FILE, [])
@@ -448,6 +459,8 @@ class ConfigManager(object):
             calc_func = "length"
         elif column_type == "timestamp":
             calc_func = "epoch_seconds"
+        elif column_type == "int32":
+            calc_func = "cast"
         else:
             raise ValueError(f"Unsupported column type: {column_type}")
 
@@ -458,6 +471,9 @@ class ConfigManager(object):
             consts.CONFIG_TYPE: calc_func,
             consts.CONFIG_DEPTH: 0,
         }
+
+        if column_type == "int32":
+            calculated_config["default_cast"] = "int64"
 
         existing_calc_fields = [
             x[consts.CONFIG_FIELD_ALIAS] for x in self.calculated_fields
@@ -473,7 +489,9 @@ class ConfigManager(object):
         }
         return aggregate_config
 
-    def build_config_column_aggregates(self, agg_type, arg_value, supported_types):
+    def build_config_column_aggregates(
+        self, agg_type, arg_value, supported_types, cast_to_bigint=False
+    ):
         """Return list of aggregate objects of given agg_type."""
         aggregate_configs = []
         source_table = self.get_source_ibis_calculated_table()
@@ -505,14 +523,18 @@ class ConfigManager(object):
                     )
                 continue
 
-            if column_type == "string" or (
-                column_type == "timestamp"
-                and agg_type
-                in (
-                    "sum",
-                    "avg",
-                    "bit_xor",
-                )  # timestamps: do not convert to epoch seconds for min/max
+            if (
+                column_type == "string"
+                or (cast_to_bigint and column_type == "int32")
+                or (
+                    column_type == "timestamp"
+                    and agg_type
+                    in (
+                        "sum",
+                        "avg",
+                        "bit_xor",
+                    )  # timestamps: do not convert to epoch seconds for min/max
+                )
             ):
                 aggregate_config = self.append_pre_agg_calc_field(
                     column, agg_type, column_type
