@@ -16,6 +16,7 @@ import copy
 import logging
 
 import google.oauth2.service_account
+from ibis_bigquery.client import BigQueryClient
 
 from data_validation import clients, consts, state_manager
 from data_validation.result_handlers.bigquery import BigQueryResultHandler
@@ -100,6 +101,10 @@ class ConfigManager(object):
             self._config.get(consts.CONFIG_RANDOM_ROW_BATCH_SIZE)
             or consts.DEFAULT_NUM_RANDOM_ROWS
         )
+
+    def get_random_row_batch_size(self):
+        """Return number of random rows or None."""
+        return self.random_row_batch_size() if self.use_random_rows() else None
 
     def process_in_memory(self):
         """Return whether to process in memory or on a remote platform."""
@@ -194,6 +199,10 @@ class ConfigManager(object):
             self.primary_keys + primary_key_configs
         )
 
+    def get_primary_keys_list(self):
+        """Return list of primary key column names"""
+        return [key[consts.CONFIG_SOURCE_COLUMN] for key in self.primary_keys]
+
     @property
     def comparison_fields(self):
         """Return fields from Config"""
@@ -271,6 +280,17 @@ class ConfigManager(object):
     def threshold(self):
         """Return threshold from Config"""
         return self._config.get(consts.CONFIG_THRESHOLD, 0.0)
+
+    @property
+    def exclusion_columns(self):
+        """Return the exclusion columns from Config"""
+        return self._config.get(consts.CONFIG_EXCLUSION_COLUMNS, [])
+
+    def append_exclusion_columns(self, column_configs):
+        """Append exclusion columns to existing config."""
+        self._config[consts.CONFIG_EXCLUSION_COLUMNS] = (
+            self.exclusion_columns + column_configs
+        )
 
     def get_source_ibis_table(self):
         """Return IbisTable from source."""
@@ -418,15 +438,15 @@ class ConfigManager(object):
             field_configs.append(column_config)
         return field_configs
 
-    def build_config_grouped_columns(self, grouped_columns):
+    def build_column_configs(self, columns):
         """Return list of grouped column config objects."""
-        grouped_column_configs = []
+        column_configs = []
         source_table = self.get_source_ibis_calculated_table()
         target_table = self.get_target_ibis_calculated_table()
         casefold_source_columns = {x.casefold(): str(x) for x in source_table.columns}
         casefold_target_columns = {x.casefold(): str(x) for x in target_table.columns}
 
-        for column in grouped_columns:
+        for column in columns:
 
             if column.casefold() not in casefold_source_columns:
                 raise ValueError(f"Grouped Column DNE in source: {column}")
@@ -438,9 +458,9 @@ class ConfigManager(object):
                 consts.CONFIG_FIELD_ALIAS: column,
                 consts.CONFIG_CAST: None,
             }
-            grouped_column_configs.append(column_config)
+            column_configs.append(column_config)
 
-        return grouped_column_configs
+        return column_configs
 
     def build_config_count_aggregate(self):
         """Return dict aggregate for COUNT(*)."""
@@ -453,40 +473,71 @@ class ConfigManager(object):
 
         return aggregate_config
 
-    def append_pre_agg_calc_field(self, column, agg_type, column_type):
-        """Append calculated field for length(string) or epoch_seconds(timestamp) for preprocessing before column validation aggregation"""
-        if column_type == "string":
-            calc_func = "length"
-        elif column_type == "timestamp":
-            calc_func = "epoch_seconds"
-        elif column_type == "int32":
-            calc_func = "cast"
-        else:
-            raise ValueError(f"Unsupported column type: {column_type}")
-
+    def build_and_append_pre_agg_calc_config(
+        self, column, calc_func, cast_type=None, depth=0
+    ):
+        """Create calculated field config used as a pre-aggregation step. Appends to calulated fields if does not already exist and returns created config."""
         calculated_config = {
             consts.CONFIG_CALCULATED_SOURCE_COLUMNS: [column],
             consts.CONFIG_CALCULATED_TARGET_COLUMNS: [column],
             consts.CONFIG_FIELD_ALIAS: f"{calc_func}__{column}",
             consts.CONFIG_TYPE: calc_func,
-            consts.CONFIG_DEPTH: 0,
+            consts.CONFIG_DEPTH: depth,
         }
 
-        if column_type == "int32":
-            calculated_config["default_cast"] = "int64"
+        if calc_func == "cast" and cast_type is not None:
+            calculated_config[consts.CONFIG_DEFAULT_CAST] = cast_type
+            calculated_config[
+                consts.CONFIG_FIELD_ALIAS
+            ] = f"{calc_func}_{cast_type}__{column}"
 
         existing_calc_fields = [
-            x[consts.CONFIG_FIELD_ALIAS] for x in self.calculated_fields
+            config[consts.CONFIG_FIELD_ALIAS] for config in self.calculated_fields
         ]
+
         if calculated_config[consts.CONFIG_FIELD_ALIAS] not in existing_calc_fields:
             self.append_calculated_fields([calculated_config])
+        return calculated_config
+
+    def append_pre_agg_calc_field(self, column, agg_type, column_type):
+        """Append calculated field for length(string) or epoch_seconds(timestamp) for preprocessing before column validation aggregation."""
+        depth, cast_type = 0, None
+
+        if column_type == "string":
+            calc_func = "length"
+
+        elif column_type == "timestamp":
+            if isinstance(self.source_client, BigQueryClient) or isinstance(
+                self.target_client, BigQueryClient
+            ):
+                calc_func = "cast"
+                cast_type = "timestamp"
+                pre_calculated_config = self.build_and_append_pre_agg_calc_config(
+                    column, calc_func, cast_type, depth
+                )
+                column = pre_calculated_config[consts.CONFIG_FIELD_ALIAS]
+                depth = 1
+
+            calc_func = "epoch_seconds"
+
+        elif column_type == "int32":
+            calc_func = "cast"
+            cast_type = "int64"
+
+        else:
+            raise ValueError(f"Unsupported column type: {column_type}")
+
+        calculated_config = self.build_and_append_pre_agg_calc_config(
+            column, calc_func, cast_type, depth
+        )
 
         aggregate_config = {
-            consts.CONFIG_SOURCE_COLUMN: f"{calc_func}__{column}",
-            consts.CONFIG_TARGET_COLUMN: f"{calc_func}__{column}",
-            consts.CONFIG_FIELD_ALIAS: f"{agg_type}__{calc_func}__{column}",
+            consts.CONFIG_SOURCE_COLUMN: f"{calculated_config[consts.CONFIG_FIELD_ALIAS]}",
+            consts.CONFIG_TARGET_COLUMN: f"{calculated_config[consts.CONFIG_FIELD_ALIAS]}",
+            consts.CONFIG_FIELD_ALIAS: f"{agg_type}__{calculated_config[consts.CONFIG_FIELD_ALIAS]}",
             consts.CONFIG_TYPE: agg_type,
         }
+
         return aggregate_config
 
     def build_config_column_aggregates(
@@ -512,13 +563,13 @@ class ConfigManager(object):
             if column not in allowlist_columns:
                 continue
             elif column not in casefold_target_columns:
-                logging.info(
+                print(
                     f"Skipping {agg_type} on {column} as column is not present in target table"
                 )
                 continue
             elif supported_types and column_type not in supported_types:
                 if self.verbose:
-                    logging.info(
+                    print(
                         f"Skipping {agg_type} on {column} due to data type: {column_type}"
                     )
                 continue
@@ -533,22 +584,23 @@ class ConfigManager(object):
                         "sum",
                         "avg",
                         "bit_xor",
-                    )  # timestamps: do not convert to epoch seconds for min/max
+                    )  # For timestamps: do not convert to epoch seconds for min/max
                 )
             ):
                 aggregate_config = self.append_pre_agg_calc_field(
                     column, agg_type, column_type
                 )
-                aggregate_configs.append(aggregate_config)
-                continue
 
-            aggregate_config = {
-                consts.CONFIG_SOURCE_COLUMN: casefold_source_columns[column],
-                consts.CONFIG_TARGET_COLUMN: casefold_target_columns[column],
-                consts.CONFIG_FIELD_ALIAS: f"{agg_type}__{column}",
-                consts.CONFIG_TYPE: agg_type,
-            }
+            else:
+                aggregate_config = {
+                    consts.CONFIG_SOURCE_COLUMN: casefold_source_columns[column],
+                    consts.CONFIG_TARGET_COLUMN: casefold_target_columns[column],
+                    consts.CONFIG_FIELD_ALIAS: f"{agg_type}__{column}",
+                    consts.CONFIG_TYPE: agg_type,
+                }
+
             aggregate_configs.append(aggregate_config)
+
         return aggregate_configs
 
     def build_config_calculated_fields(

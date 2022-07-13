@@ -13,15 +13,17 @@
 # limitations under the License.
 
 from copy import deepcopy
+
 from data_validation import consts, metadata
+from data_validation.query_builder.custom_query_builder import CustomQueryBuilder
 from data_validation.query_builder.query_builder import (
-    QueryBuilder,
-    GroupedField,
     AggregateField,
     CalculatedField,
+    ComparisonField,
     FilterField,
+    GroupedField,
+    QueryBuilder,
 )
-from data_validation.query_builder.custom_query_builder import CustomQueryBuilder
 
 
 class ValidationBuilder(object):
@@ -190,6 +192,8 @@ class ValidationBuilder(object):
             target_table_name=self.config_manager.target_table,
             source_column_name=source_field_name,
             target_column_name=target_field_name,
+            primary_keys=self.config_manager.get_primary_keys_list(),
+            num_random_rows=self.config_manager.get_random_row_batch_size(),
             threshold=self.config_manager.threshold,
         )
 
@@ -224,7 +228,7 @@ class ValidationBuilder(object):
         self.group_aliases[alias] = grouped_field
 
     def add_primary_key(self, primary_key):
-        """Add ComparionField to Queries
+        """Add ComparisonField to Queries
 
         Args:
             primary_key (Dict): An object with source, target, and cast info
@@ -232,10 +236,17 @@ class ValidationBuilder(object):
         source_field_name = primary_key[consts.CONFIG_SOURCE_COLUMN]
         target_field_name = primary_key[consts.CONFIG_TARGET_COLUMN]
         # grab calc field metadata
-        alias = primary_key[consts.CONFIG_FIELD_ALIAS]
+        alias = primary_key.get(consts.CONFIG_FIELD_ALIAS)
+        cast = primary_key.get(consts.CONFIG_CAST)
         # check if valid calc field and return correct object
-        self.source_builder.add_comparison_field(source_field_name)
-        self.target_builder.add_comparison_field(target_field_name)
+        source_field = ComparisonField(
+            field_name=source_field_name, alias=alias, cast=cast
+        )
+        target_field = ComparisonField(
+            field_name=target_field_name, alias=alias, cast=cast
+        )
+        self.source_builder.add_comparison_field(source_field)
+        self.target_builder.add_comparison_field(target_field)
         self.primary_keys[alias] = primary_key
 
     def add_filter(self, filter_field):
@@ -284,9 +295,16 @@ class ValidationBuilder(object):
         target_field_name = comparison_field[consts.CONFIG_TARGET_COLUMN]
         # grab calc field metadata
         alias = comparison_field[consts.CONFIG_FIELD_ALIAS]
+        cast = comparison_field.get(consts.CONFIG_CAST)
+        source_field = ComparisonField(
+            field_name=source_field_name, alias=alias, cast=cast
+        )
+        target_field = ComparisonField(
+            field_name=target_field_name, alias=alias, cast=cast
+        )
         # check if valid calc field and return correct object
-        self.source_builder.add_comparison_field(source_field_name)
-        self.target_builder.add_comparison_field(target_field_name)
+        self.source_builder.add_comparison_field(source_field)
+        self.target_builder.add_comparison_field(target_field)
         self._metadata[alias] = metadata.ValidationMetadata(
             aggregation_type=None,
             validation_type=self.validation_type,
@@ -296,6 +314,8 @@ class ValidationBuilder(object):
             target_table_name=self.config_manager.target_table,
             source_column_name=source_field_name,
             target_column_name=target_field_name,
+            primary_keys=self.config_manager.get_primary_keys_list(),
+            num_random_rows=self.config_manager.get_random_row_batch_size(),
             threshold=self.config_manager.threshold,
         )
 

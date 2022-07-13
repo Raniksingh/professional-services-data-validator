@@ -21,6 +21,7 @@ CONFIG_TARGET_CONN_NAME = "target_conn_name"
 CONFIG_SOURCE_CONN = "source_conn"
 CONFIG_TARGET_CONN = "target_conn"
 CONFIG_TYPE = "type"
+CONFIG_DEFAULT_CAST = "default_cast"
 CONFIG_SCHEMA_NAME = "schema_name"
 CONFIG_TABLE_NAME = "table_name"
 CONFIG_TARGET_SCHEMA_NAME = "target_schema_name"
@@ -55,6 +56,7 @@ CONFIG_FILTER_SOURCE_COLUMN = "source_column"
 CONFIG_FILTER_SOURCE_VALUE = "source_value"
 CONFIG_FILTER_TARGET_COLUMN = "target_column"
 CONFIG_FILTER_TARGET_VALUE = "target_value"
+CONFIG_EXCLUSION_COLUMNS = "exclusion_columns"
 
 CONFIG_RESULT_HANDLER = "result_handler"
 
@@ -134,6 +136,12 @@ COLUMN_FILTER_LIST = [
     "pct_threshold",
     "run_id",
     "start_time",
+    "target_table_name",
+    "target_column_name",
+    "difference",
+    "primary_keys",
+    "group_by_columns",
+    "num_random_rows",
 ]
 SCHEMA_VALIDATION_COLUMN_FILTER_LIST = [
     "run_id",

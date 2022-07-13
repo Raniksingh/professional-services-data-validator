@@ -55,6 +55,7 @@ def get_aggregate_config(args, config_manager):
     aggregate_configs = [config_manager.build_config_count_aggregate()]
     supported_data_types = [
         "float64",
+        "float32",
         "int8",
         "int16",
         "int32",
@@ -156,7 +157,7 @@ def build_config_from_args(args, config_manager):
         if args.grouped_columns is not None:
             grouped_columns = cli_tools.get_arg_list(args.grouped_columns)
             config_manager.append_query_groups(
-                config_manager.build_config_grouped_columns(grouped_columns)
+                config_manager.build_column_configs(grouped_columns)
             )
     elif config_manager.validation_type == consts.ROW_VALIDATION:
         if args.comparison_fields is not None:
@@ -172,7 +173,7 @@ def build_config_from_args(args, config_manager):
     if args.primary_keys is not None:
         primary_keys = cli_tools.get_arg_list(args.primary_keys)
         config_manager.append_primary_keys(
-            config_manager.build_config_comparison_fields(primary_keys)
+            config_manager.build_column_configs(primary_keys)
         )
         if args.hash != "*":
             config_manager.append_dependent_aliases(primary_keys)
@@ -199,20 +200,17 @@ def build_config_managers_from_args(args):
     """Return a list of config managers ready to execute."""
     configs = []
 
-    if args.type is None:
-        validate_cmd = args.validate_cmd.capitalize()
-        if validate_cmd == "Schema":
-            config_type = consts.SCHEMA_VALIDATION
-        elif validate_cmd == "Column":
-            config_type = consts.COLUMN_VALIDATION
-        elif validate_cmd == "Row":
-            config_type = consts.ROW_VALIDATION
-        elif validate_cmd == "Custom-query":
-            config_type = consts.CUSTOM_QUERY
-        else:
-            raise ValueError(f"Unknown Validation Type: {validate_cmd}")
+    validate_cmd = args.validate_cmd.capitalize()
+    if validate_cmd == "Schema":
+        config_type = consts.SCHEMA_VALIDATION
+    elif validate_cmd == "Column":
+        config_type = consts.COLUMN_VALIDATION
+    elif validate_cmd == "Row":
+        config_type = consts.ROW_VALIDATION
+    elif validate_cmd == "Custom-query":
+        config_type = consts.CUSTOM_QUERY
     else:
-        config_type = args.type
+        raise ValueError(f"Unknown Validation Type: {validate_cmd}")
 
     result_handler_config = None
     if args.bq_result_handler:
@@ -270,6 +268,12 @@ def build_config_managers_from_args(args):
         )
         if config_type != consts.SCHEMA_VALIDATION:
             config_manager = build_config_from_args(args, config_manager)
+        else:
+            if args.exclusion_columns is not None:
+                exclusion_columns = cli_tools.get_arg_list(args.exclusion_columns)
+                config_manager.append_exclusion_columns(
+                    [col.casefold() for col in exclusion_columns]
+                )
 
         configs.append(config_manager)
 
@@ -490,9 +494,7 @@ def main():
     # Create Parser and Get Deployment Info
     args = cli_tools.get_parsed_args()
 
-    if args.command == "run":
-        run(args)
-    elif args.command == "connections":
+    if args.command == "connections":
         run_connections(args)
     elif args.command == "run-config":
         run_config(args)

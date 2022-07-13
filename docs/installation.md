@@ -105,7 +105,7 @@ If you require Teradata and have a license, install the `teradatasql` package.
 python -m pip install teradatasql
 ```
 
-If you plan to perform row level hashing on teradata, you will need to install a UDF that implements sha256 on your Teradata instance. An example can be found [here](.https://downloads.teradata.com/forum/extensibility/sha-2-udfs-for-teradata).
+If you plan to perform row level hashing on teradata, you will need to install a UDF that implements sha256 on your Teradata instance. An example can be found [here](https://downloads.teradata.com/forum/extensibility/sha-2-udfs-for-teradata).
 
 After installing the Data Validation package you will
 have access to the `data-validation -h` or `python -m data_validation -h`
@@ -124,3 +124,9 @@ The unit test suite can be executed using either `pytest tests/unit` or `python 
 If native installation is not an option for you, you can create a Docker image for this tool.  
 
 Here's an [example](https://github.com/GoogleCloudPlatform/professional-services-data-validator/blob/develop/samples/docker/README.md) on how you can create a sample docker image for this tool.
+
+
+## Automate using Apache Airflow
+You can orchestrate DVT by running a validation as a task within an Airflow DAG.
+
+Here's a simple [example](https://github.com/GoogleCloudPlatform/professional-services-data-validator/blob/develop/samples/airflow/dvt_airflow_dag.py) on how you can execute this tool using the [PythonVirtualenvOperator](https://airflow.apache.org/docs/apache-airflow/stable/howto/operator/python.html#pythonvirtualenvoperator).

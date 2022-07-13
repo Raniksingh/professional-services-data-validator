@@ -222,13 +222,13 @@ def test_get_table_info(module_under_test):
     assert target_table_spec == expected_table_spec
 
 
-def test_build_config_grouped_columns(module_under_test):
+def test_build_column_configs(module_under_test):
     config_manager = module_under_test.ConfigManager(
         SAMPLE_CONFIG, MockIbisClient(), MockIbisClient(), verbose=False
     )
 
-    column_configs = config_manager.build_config_grouped_columns(["a"])
-    lazy_column_configs = config_manager.build_config_grouped_columns(["A"])
+    column_configs = config_manager.build_column_configs(["a"])
+    lazy_column_configs = config_manager.build_column_configs(["A"])
     assert column_configs[0] == GROUPED_COLUMN_CONFIG_A
     assert (
         lazy_column_configs[0][consts.CONFIG_SOURCE_COLUMN]
@@ -293,6 +293,28 @@ def test_get_result_handler(module_under_test):
     handler = config_manager.get_result_handler()
 
     assert handler._table_id == "dataset.table_name"
+
+
+def test_get_primary_keys_list(module_under_test):
+    config_manager = module_under_test.ConfigManager(
+        SAMPLE_CONFIG, MockIbisClient(), MockIbisClient(), verbose=False
+    )
+    config_manager._config[consts.CONFIG_PRIMARY_KEYS] = [
+        {
+            consts.CONFIG_FIELD_ALIAS: "id",
+            consts.CONFIG_SOURCE_COLUMN: "id",
+            consts.CONFIG_TARGET_COLUMN: "id",
+            consts.CONFIG_CAST: None,
+        },
+        {
+            consts.CONFIG_FIELD_ALIAS: "sample_id",
+            consts.CONFIG_SOURCE_COLUMN: "sample_id",
+            consts.CONFIG_TARGET_COLUMN: "sample_id",
+            consts.CONFIG_CAST: None,
+        },
+    ]
+    res = config_manager.get_primary_keys_list()
+    assert res == ["id", "sample_id"]
 
 
 def test_dependent_aliases(module_under_test):
