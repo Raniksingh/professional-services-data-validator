@@ -15,7 +15,7 @@
 import json
 import os
 import sys
-
+import logging
 from yaml import Dumper, dump
 
 from data_validation import (
@@ -246,7 +246,7 @@ def build_config_managers_from_args(args):
 
     is_filesystem = source_client._source_type == "FileSystem"
     tables_list = cli_tools.get_tables_list(
-        args.tables_list, default_value=[], is_filesystem=is_filesystem
+        args.tables_list, default_value=[{}], is_filesystem=is_filesystem
     )
 
     for table_obj in tables_list:
@@ -491,9 +491,13 @@ def validate(args):
 
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s-%(levelname)s: %(message)s",
+        datefmt="%m/%d/%Y %I:%M:%S %p",
+    )
     # Create Parser and Get Deployment Info
     args = cli_tools.get_parsed_args()
-
     if args.command == "connections":
         run_connections(args)
     elif args.command == "run-config":
